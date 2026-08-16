@@ -24,7 +24,14 @@ outputs/
 checkpoints/
 
 .env
+.env.*
+!.env.example
 *.log
+
+# Local provider credentials
+jina_key
+serper_key
+xyz-aquila-key
 
 # Custom ignores
 .preview

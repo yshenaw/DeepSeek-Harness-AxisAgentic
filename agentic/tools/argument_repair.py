@@ -8,6 +8,8 @@ from difflib import SequenceMatcher
 from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from agentic.contracts import ToolRequest
     from agentic.tools.base import Tool
 
@@ -59,8 +61,14 @@ class ToolArgumentRepairer:
         self.fuzzy_match_threshold = fuzzy_match_threshold
         self._hooks: dict[str, ToolArgumentRepairHook] = dict(hooks or {})
 
-    def register_hook(self, tool_name: str, hook: ToolArgumentRepairHook) -> None:
+    def register_hook(self, tool_name: str, hook: ToolArgumentRepairHook) -> Callable[[], None]:
         self._hooks[tool_name] = hook
+
+        def dispose() -> None:
+            if self._hooks.get(tool_name) is hook:
+                self._hooks.pop(tool_name, None)
+
+        return dispose
 
     def repair(self, request: ToolRequest, tool: Tool) -> ToolArgumentRepairResult:
         original = request.arguments

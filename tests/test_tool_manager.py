@@ -1,3 +1,6 @@
+# Copyright 2026 XYZ AI Lab and contributors.
+# SPDX-License-Identifier: Apache-2.0
+
 import asyncio
 import json
 from pathlib import Path
@@ -86,6 +89,32 @@ def test_tool_manager_rejects_duplicate_tool_registration() -> None:
         manager.register(tool)
 
     assert "already registered" in str(exc_info.value)
+
+
+def test_tool_manager_registration_disposer_is_idempotent() -> None:
+    first_tool = CallableTool(
+        name="echo",
+        description="Return the provided text.",
+        parameters={"type": "object", "properties": {}},
+        fn=lambda: ToolResult(content="first"),
+    )
+    second_tool = CallableTool(
+        name="echo",
+        description="Return the provided text.",
+        parameters={"type": "object", "properties": {}},
+        fn=lambda: ToolResult(content="second"),
+    )
+    manager = ToolManager()
+
+    dispose_first = manager.register(first_tool)
+    dispose_first()
+    dispose_second = manager.register(second_tool)
+    dispose_first()
+
+    assert manager.has_tool("echo")
+    dispose_second()
+    dispose_second()
+    assert not manager.has_tool("echo")
 
 
 def test_tool_manager_rejects_unknown_tool() -> None:
@@ -249,6 +278,37 @@ def test_tool_manager_argument_repair_hook_can_be_registered() -> None:
 
     assert result.status == ToolResultStatus.SUCCESS
     assert result.content == "hooked"
+
+
+def test_tool_manager_argument_repair_hook_disposer_is_idempotent() -> None:
+    tool = CallableTool(
+        name="echo",
+        description="Echoes.",
+        parameters={"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
+        strict_mode=False,
+        fn=lambda text: ToolResult(content=text),
+    )
+    manager = ToolManager(
+        tools=[tool],
+        config=ToolManagerConfig(argument_repair=ToolArgumentRepairConfig(enabled=True)),
+    )
+    dispose_first = manager.register_argument_repair_hook(
+        "echo",
+        lambda _request, _tool, arguments: {"text": f"first:{arguments.get('message', '')}"},
+    )
+    dispose_second = manager.register_argument_repair_hook(
+        "echo",
+        lambda _request, _tool, arguments: {"text": f"second:{arguments.get('message', '')}"},
+    )
+
+    dispose_first()
+    result_with_second = asyncio.run(manager._execute(ToolRequest(tool_name="echo", arguments={"message": "value"})))
+    dispose_second()
+    dispose_second()
+    result_without_hook = asyncio.run(manager._execute(ToolRequest(tool_name="echo", arguments={"text": "plain"})))
+
+    assert result_with_second.content == "second:value"
+    assert result_without_hook.content == "plain"
 
 
 def test_tool_manager_call_budget_enforcement() -> None:

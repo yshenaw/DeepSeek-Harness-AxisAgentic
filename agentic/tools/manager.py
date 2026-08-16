@@ -6,7 +6,7 @@ from __future__ import annotations
 import copy
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import jsonschema
 
@@ -16,6 +16,9 @@ from agentic.contracts.messages import ToolResultReason, ToolResultStatus
 from agentic.observability.task_logger import TaskLogger, ToolTrace
 from agentic.tools.argument_repair import ToolArgumentRepairer, ToolArgumentRepairHook
 from agentic.tools.base import Tool, ToolContext, ToolMetrics, ToolResult
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 UNKNOWN_TOOL_METRICS_KEY = "__unknown__"
 
@@ -65,7 +68,7 @@ class ToolManager:
     def set_tool_path(self, tool_path: list[str]) -> None:
         self._tool_path = list(tool_path)
 
-    def register(self, tool: Tool) -> None:
+    def register(self, tool: Tool) -> Callable[[], None]:
         if tool.name in self._tools:
             raise ValueError(f"Tool '{tool.name}' is already registered.")
         self._propagate_level_to_tool(tool)
@@ -73,9 +76,19 @@ class ToolManager:
         self._metrics.setdefault(tool.name, ToolMetrics())
         self._task_call_counts.setdefault(tool.name, 0)
 
-    def register_argument_repair_hook(self, tool_name: str, hook: ToolArgumentRepairHook) -> None:
+        def dispose() -> None:
+            if self._tools.get(tool.name) is not tool:
+                return
+            self._tools.pop(tool.name, None)
+            self._metrics.pop(tool.name, None)
+            self._task_call_counts.pop(tool.name, None)
+            self._prev_round_args.pop(tool.name, None)
+
+        return dispose
+
+    def register_argument_repair_hook(self, tool_name: str, hook: ToolArgumentRepairHook) -> Callable[[], None]:
         """Register a domain-specific argument repair hook for one tool."""
-        self._argument_repairer.register_hook(tool_name, hook)
+        return self._argument_repairer.register_hook(tool_name, hook)
 
     def has_tool(self, name: str) -> bool:
         return name in self._tools

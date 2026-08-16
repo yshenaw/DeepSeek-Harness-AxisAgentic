@@ -53,6 +53,10 @@ class ContextCompressionManager:
         self._previous_summary: str = "(none yet)"
         self._last_trigger_turn: int = 0
 
+    @property
+    def latest_summary(self) -> str:
+        return self._previous_summary
+
     def should_trigger(self, turn_count: int) -> bool:
         if not self.cfg.enabled:
             return False

@@ -1,6 +1,8 @@
 # Copyright 2026 XYZ AI Lab and contributors.
 # SPDX-License-Identifier: Apache-2.0
 
+from agentic.agent_loop import AGENT_FACTORY_SERVICE, Agent, AgentFactory, AgentLoop, AgentLoopPlugin
+from agentic.compaction import COMPACTION_SERVICE, CompactionPlugin, Compactor
 from agentic.config import (
     ConversationConfig,
     ExternalServerConfig,
@@ -30,13 +32,22 @@ from agentic.conversations import ConversationRuntime
 from agentic.model_clients import CallableModelClient, ModelClient, OpenAICompatibleModelClient
 from agentic.observability import TaskLogger, TaskTrace, ToolTrace
 from agentic.orchestration import OrchestrationResult, OrchestratorTool, TaskOrchestrator
+from agentic.plugin import Plugin, PluginContext
 from agentic.rewards import RewardContext, RewardEvaluator, ToolCallRewardEvaluator, ZeroRewardEvaluator
 from agentic.rl import RLEnvironmentFacade, RLPolicyFacade, RLRolloutFacade
 from agentic.tools import CallableTool, MCPToolAdapter, Tool, ToolContext, ToolExecutionOutcome, ToolManager, ToolMetrics, ToolResult
 
 __all__ = [
+    "AGENT_FACTORY_SERVICE",
+    "COMPACTION_SERVICE",
+    "Agent",
+    "AgentFactory",
+    "AgentLoop",
+    "AgentLoopPlugin",
     "CallableModelClient",
     "CallableTool",
+    "CompactionPlugin",
+    "Compactor",
     "ConversationConfig",
     "ConversationMessage",
     "ConversationRuntime",
@@ -54,6 +65,8 @@ __all__ = [
     "OrchestrationConfig",
     "OrchestrationResult",
     "OrchestratorTool",
+    "Plugin",
+    "PluginContext",
     "RLEnvironmentFacade",
     "RLPolicyFacade",
     "RLRolloutFacade",

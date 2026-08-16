@@ -38,8 +38,8 @@ from recipe.web_search.agent.prompts import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
+    from agentic.compaction import Compactor
     from agentic.conversations.conversation_runtime import ConversationRuntime
-    from recipe.web_search.agent.context_compression_manager import ContextCompressionManager
     from recipe.web_search.agent.discard_all_manager import DiscardAllManager
 
 logger = logging.getLogger(__name__)
@@ -191,7 +191,7 @@ class WebSearchTaskOrchestrator(TaskOrchestrator):
         rollback_storm_tool_error_threshold: int = 10,
         rollback_storm_late_turn_threshold: int = 250,
         rollback_storm_preview_max_items: int = 5,
-        context_compression_manager: ContextCompressionManager | None = None,
+        context_compression_manager: Compactor | None = None,
         discard_all_manager: DiscardAllManager | None = None,
         discard_all_last_attempt_max_turns: int | None = None,
         **kwargs: Any,
@@ -2508,7 +2508,7 @@ class WebSearchTaskOrchestrator(TaskOrchestrator):
         mgr = self._context_compression_manager
         if mgr is None:
             return ""
-        summary = getattr(mgr, "_previous_summary", "") or ""
+        summary = mgr.latest_summary or ""
         if not summary or summary.strip() == "(none yet)":
             return ""
         import json
