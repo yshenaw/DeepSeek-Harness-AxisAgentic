@@ -11,7 +11,7 @@
   </p>
 
   <p>
-    <a href="https://github.com/XYZ-AI-Lab/AxisAgentic/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/XYZ-AI-Lab/AxisAgentic/actions/workflows/ci.yml/badge.svg"></a>
+    <a href="https://github.com/yshenaw/DeepSeek-Harness-AxisAgentic/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/yshenaw/DeepSeek-Harness-AxisAgentic/actions/workflows/ci.yml/badge.svg"></a>
     <img alt="Python 3.12+" src="https://img.shields.io/badge/Python-3.12%2B-blue.svg">
     <a href="https://github.com/astral-sh/ruff"><img alt="Ruff" src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json"></a>
     <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
@@ -27,6 +27,108 @@
 AxisAgentic 是面向长时程 AI 智能体的可扩展运行时，也负责采集执行过程中产生的轨迹。它支持兼容 OpenAI 的端点和可插拔本地模型客户端，并提供多轮执行、工具编排、上下文管理、恢复和基准评估等能力。每条轨迹都保留模型实际可见的状态，因此同一份记录既可用于恢复、回放和基准评估，也可以经筛选后导出为 SFT 数据。
 
 仓库目前提供 Web Search 和 WideSearch 两个参考 recipe。相同的扩展接口也能用于领域 Agent、通用 Agent 和编程 Agent。本仓库不包含模型权重。
+
+> [!IMPORTANT]
+> **Fork 与实验。** 本仓库派生自 [XYZ-AI-Lab/AxisAgentic](https://github.com/XYZ-AI-Lab/AxisAgentic)。上游项目仍是当前保留运行时、recipe、文档、归属说明和引用信息的来源。本 Fork 通过小型且保持兼容的改动，探索一种受 DeepSeek Harness 启发的 **“everything is plugin”** 组合模型；这并不表示本仓库与 DeepSeek Harness 兼容，也不表示完整的 AxisAgentic 运行时已经全部 plugin 化。
+
+## 🧩 实验性 Plugin 组合
+
+这个 Fork 的目标是在不重写现有运行时的前提下，让后续修改 Harness、Agent Loop、Skill 和上下文管理更加容易。目前实验层包括：
+
+- **明确的生命周期归属：** `PluginContext` 管理作用域服务和清理 effect。初始化失败时自动回滚，显式卸载是幂等的，context 关闭时按注册的反向顺序清理。
+- **可撤销注册：** Tool 和参数修复 Hook 的注册都会返回 disposer，因此 plugin 拥有的能力可以被安全移除。
+- **可插拔 Agent Loop：** `AgentLoopPlugin` 提供 `AgentFactory`；每个新 Agent 都有独立的 `PluginContext`，用于组合自己的模型、工具、策略和辅助服务。
+- **可插拔 Compaction：** `CompactionPlugin` 在 Agent 本地 context 中提供 `Compactor`；`WebSearchTaskOrchestrator` 依赖接口，而不是具体的压缩管理器。
+
+```mermaid
+flowchart LR
+  R[Root PluginContext] --> L[AgentLoopPlugin]
+  L --> F[AgentFactory]
+  F --> A[Agent A Context]
+  F --> B[Agent B Context]
+  A --> CA[CompactionPlugin / Skills / Policy]
+  B --> CB[独立的 plugins 和 services]
+  A --> OA[Agent Loop 实现]
+  B --> OB[Agent Loop 实现]
+```
+
+这条边界目前刻意保持精简。`ConversationRuntime`、`TaskOrchestrator`、模型客户端、轨迹格式、配置，以及现有 Web Search/WideSearch runner 的装配方式仍兼容上游设计。依赖就绪后自动激活、Provider 热替换、通用事件总线、长期 Memory 和完整的 recipe plugin 化尚未实现。
+
+### AI4AI：由外部开发 Agent 驱动的 Harness 演化
+
+本项目中的 **AI4AI**，是指使用 Claude Code、Codex 或 Copilot 等外部开发 Agent 演化 AxisAgentic Harness。外部 Agent 可以检查源码、重放轨迹、分析 Benchmark 结果、实现候选改动，并运行回归测试或成本对比；AxisAgentic 则提供具有独立作用域、可撤销、可测试的边界，使这个过程保持受控。
+
+```text
+观察代码、轨迹和指标
+-> 提出 Harness 改动
+-> 实现候选 Plugin/Profile
+-> 运行测试与 Benchmark
+-> 与 Baseline 对比
+-> 人工审查
+-> 晋升或回滚
+```
+
+Plugin 组合之所以更适合这套流程，是因为它把 Harness 改动变成了更小的演化单元：
+
+- **更小的改动面：** 外部 Agent 可以替换一个 Loop、Skill、Policy 或 Compactor，而不必重写中心编排器。
+- **候选方案隔离：** Baseline 和 Candidate Agent 可以在同一评测进程中使用不同的 Plugin Context，而不会共享可变服务。
+- **可复现的比较：** 候选方案可以被描述为明确的 Plugin/Profile 组合，并在相同数据集、轨迹和指标上与 Baseline 比较。
+- **低成本回滚：** 可撤销注册和明确的清理归属，使失败候选可以被移除，而不会残留 Tool、Hook 或外部资源。
+- **更安全的晋升：** 开发 Agent 只负责产生候选改动；是否进入稳定 Harness，仍由测试、Benchmark、代码审查和显式晋升决定。
+
+这属于**由 AI 辅助、受控的 Harness 演化**，而不是不受限制的运行时自修改。外部 Agent 不会自动获得生产环境权限，运行时实验也不会在缺少源码变更、验证和审查时自动晋升。因此 Plugin 不是最终目的，而是需要隔离、度量和回滚的 Harness 改动所使用的最小实用单元。
+
+<details>
+<summary>最小可运行组合示例</summary>
+
+```python
+import asyncio
+from typing import Any, cast
+
+from agentic import AGENT_FACTORY_SERVICE, AgentFactory, AgentLoopPlugin, PluginContext
+
+
+class LabelPlugin:
+  def __init__(self, label: str) -> None:
+    self._label = label
+
+  def apply(self, context: PluginContext) -> None:
+    context.provide("label", self._label)
+
+
+class EchoLoop:
+  def __init__(self, context: PluginContext) -> None:
+    self._label = cast("str", context.require("label"))
+
+  async def run(
+    self,
+    task: str | dict[str, Any],
+    task_id: str | None = None,
+    *,
+    extra_trace_metadata: dict[str, Any] | None = None,
+  ) -> str:
+    del task_id, extra_trace_metadata
+    return f"{self._label}: {task}"
+
+
+async def main() -> None:
+  async with PluginContext() as root:
+    await root.mount(AgentLoopPlugin(EchoLoop))
+    factory = cast("AgentFactory", root.require(AGENT_FACTORY_SERVICE))
+
+    async def setup(context: PluginContext) -> None:
+      await context.mount(LabelPlugin("agent-1"))
+
+    agent = await factory.create_agent(setup=setup)
+    print(await agent.run("hello"))  # agent-1: hello
+
+
+asyncio.run(main())
+```
+
+如需切换压缩策略，只需实现 `Compactor` 协议，并在 Agent setup 中挂载 `CompactionPlugin(your_compactor)`。Agent Loop 随后可以通过 `COMPACTION_SERVICE` 获取它，而不依赖具体实现。
+
+</details>
 
 ## ✨ 核心能力
 
@@ -70,8 +172,8 @@ XYZ-Aquila 是基于 AxisAgentic 构建的搜索系统。它的 recipe 将搜索
 AxisAgentic 需要 Python 3.12 或更高版本，以及一个 OpenAI 兼容模型端点。[快速开始](docs/getting-started.zh-CN.md)介绍安装、服务变量、recipe 配置、dry run、回放和 SFT 导出；完整配置项见[配置](docs/configuration.zh-CN.md)。
 
 ```bash
-git clone https://github.com/XYZ-AI-Lab/AxisAgentic.git
-cd AxisAgentic
+git clone https://github.com/yshenaw/DeepSeek-Harness-AxisAgentic.git
+cd DeepSeek-Harness-AxisAgentic
 python3.12 -m venv .venv
 source .venv/bin/activate
 ./setup_env.sh
@@ -106,9 +208,9 @@ python -m recipe.web_search.runners.run_eval_config \
 
 除非另有说明，AxisAgentic 采用 [Apache License 2.0](LICENSE) 许可。第三方归属和许可说明请参阅 [NOTICE](NOTICE)。
 
-## 📝 引用
+## 📝 上游引用
 
-如果你使用了本代码库，请引用以下软件条目：
+对于本仓库保留的 AxisAgentic 实现，请按以下条目引用上游软件：
 
 ```bibtex
 @software{wang2026axisagentic,
